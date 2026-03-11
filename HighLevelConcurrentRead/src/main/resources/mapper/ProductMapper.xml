@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.whu.highlevelconcurrentread.mapper.ProductMapper">
+
+    <resultMap id="ProductResultMap" type="com.whu.highlevelconcurrentread.entity.Product">
+        <id     column="id"          property="id"/>
+        <result column="name"        property="name"/>
+        <result column="description" property="description"/>
+        <result column="price"       property="price"/>
+        <result column="stock"       property="stock"/>
+        <result column="created_at"  property="createdAt"/>
+    </resultMap>
+
+    <sql id="allColumn">
+        id, name, description, price, stock, created_at
+    </sql>
+
+    <select id="findById" resultMap="ProductResultMap">
+        select <include refid="allColumn"/>
+        from product
+        where id = #{id}
+    </select>
+
+    <select id="findAll" resultMap="ProductResultMap">
+        SELECT <include refid="allColumn"/>
+        FROM product
+        ORDER BY id
+    </select>
+
+</mapper>

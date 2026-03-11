@@ -1,0 +1,60 @@
+# ==========================================
+# 通用多项目 SpringBoot 全局忽略规则
+# ==========================================
+
+# --- 基础说明文件 (可选，如果不希望上传根目录以外的 HELP.md) ---
+**/HELP.md
+
+# --- 编译产物 (匹配任何目录下的 target 文件夹) ---
+target/
+**/target/
+build/
+**/build/
+bin/
+out/
+
+# --- Maven/Gradle 依赖与封装 ---
+.mvn/
+**/wrapper/maven-wrapper.jar
+**/wrapper/maven-wrapper.properties
+.gradle/
+**/build.log
+
+# --- 例外规则：确保 src 目录下的特定 target 不被误杀 (通常保持默认即可) ---
+!**/src/main/**/target/
+!**/src/test/**/target/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# --- STS (Eclipse) 相关 ---
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+# --- IntelliJ IDEA 相关 (全局匹配所有子项目的配置) ---
+.idea/
+**/.idea/
+*.iws
+*.iml
+*.ipr
+**/out/
+
+# --- NetBeans 相关 ---
+**/nbproject/private/
+**/nbbuild/
+**/dist/
+**/nbdist/
+**/.nb-gradle/
+
+# --- VS Code 相关 ---
+.vscode/
+**/.vscode/
+
+# --- 操作系统与日志 ---
+*.log
+.DS_Store
+Thumbs.db

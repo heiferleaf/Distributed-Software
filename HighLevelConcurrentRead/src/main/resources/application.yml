@@ -1,0 +1,34 @@
+server:
+  port: ${ SERVER_PORT:8080 }
+
+app:
+  instance-id: ${INSTANCE_ID:default}
+
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${ SPRING_DATASOURCE_PASSWORD:1234 }
+    url: ${ SPRING_DATASOURCE_URL:jdbc:mysql://mysql:3307/shop?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=utf8 }
+
+  data:
+    redis:
+      host: ${ SPRING_DATA_REDIS_HOST:redis }
+      port: 6379
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-idle: 8
+          max-active: 20
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.whu.highlevelconcurrentread.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    com.example: DEBUG

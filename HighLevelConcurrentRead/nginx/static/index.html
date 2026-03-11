@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品展示</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; }
+        .header { background: #e44d26; color: white; padding: 20px; text-align: center; }
+        .container { max-width: 1200px; margin: 20px auto; padding: 0 20px; }
+        .products { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+        .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,.1); cursor: pointer; transition: transform .2s; }
+        .card:hover { transform: translateY(-4px); }
+        .card h3 { color: #333; margin-bottom: 8px; }
+        .price { color: #e44d26; font-size: 1.4em; font-weight: bold; }
+        .stock { color: #999; font-size: .9em; margin-top: 8px; }
+        .instance-tag { background: #e8f5e9; color: #388e3c; padding: 4px 10px;
+            border-radius: 20px; font-size:.85em; display:inline-block; margin-bottom:16px; }
+        #loading { text-align: center; padding: 40px; color: #999; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>🛍️ 商品展示系统</h1>
+    <p>高并发架构演示</p>
+</div>
+<div class="container">
+    <div id="instance-info"></div>
+    <div id="loading">加载中...</div>
+    <div class="products" id="product-list"></div>
+</div>
+
+<script>
+    // 查询当前处理请求的后端实例
+    fetch('/api/health')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('instance-info').innerHTML =
+                `<span class="instance-tag">当前后端实例: ${data.instance}</span>`;
+        });
+
+    // 加载商品列表
+    fetch('/api/products')
+        .then(r => r.json())
+        .then(products => {
+            document.getElementById('loading').style.display = 'none';
+            const list = document.getElementById('product-list');
+            products.forEach(p => {
+                list.innerHTML += `
+                        <div class="card" onclick="loadDetail(${p.id})">
+                            <h3>${p.name}</h3>
+                            <p style="color:#666;margin:8px 0">${p.description}</p>
+                            <div class="price">¥${p.price}</div>
+                            <div class="stock">库存: ${p.stock}</div>
+                        </div>`;
+            });
+        })
+        .catch(e => {
+            document.getElementById('loading').textContent = '加载失败: ' + e.message;
+        });
+
+    function loadDetail(id) {
+        fetch(`/api/products/${id}`)
+            .then(r => r.json())
+            .then(p => alert(`${p.name}\n价格: ¥${p.price}\n${p.description}`));
+    }
+</script>
+</body>
+</html>
