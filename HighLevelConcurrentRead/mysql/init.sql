@@ -17,3 +17,7 @@ INSERT INTO product (name, description, price, stock) VALUES
                                                           ('AirPods Pro', '主动降噪耳机', 1899.00, 200),
                                                           ('iPad Air', '平板电脑', 4799.00, 80),
                                                           ('Apple Watch', '智能手表', 3299.00, 120);
+
+CREATE USER 'canal'@'%' IDENTIFIED WITH mysql_native_password BY 'canal_password';
+GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'canal'@'%';
+FLUSH PRIVILEGES;

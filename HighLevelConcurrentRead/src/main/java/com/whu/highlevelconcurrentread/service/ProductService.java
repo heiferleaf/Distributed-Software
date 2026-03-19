@@ -24,7 +24,7 @@ public class ProductService {
     @Value("${app.instance-id}")
     private String instanceId;
 
-    private static final String PRODUCT_KEY = "product";
+    private static final String PRODUCT_KEY = "product:";
     // 防止缓存穿透，空值设置
     private static final String NULL_VALUE  = "NULL";
     // 防止缓存击穿，设置锁
@@ -100,5 +100,14 @@ public class ProductService {
         // 列表缓存时间短，数据变化敏感
         redisTemplate.opsForValue().set(cacheKey, products, 5, TimeUnit.SECONDS);
         return products;
+    }
+
+    public void updateProduct(Product product) {
+        log.info("[实例:{}] 修改商品信息，进入数据库更新流程: {}", instanceId, product.getId());
+
+        // 【核心准则】：只更新数据库！不要在这里写任何 redisTemplate.delete()！
+        // 只要数据库更新成功，MySQL 就会产生 Binlog
+        // Canal 就会捕获 -> 发到 MQ -> Listener 异步删除对应缓存
+        productMapper.update(product);
     }
 }

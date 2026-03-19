@@ -22,6 +22,19 @@ spring:
           max-idle: 8
           max-active: 20
 
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:rabbitmq}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # 【核心基建】：开启手动确认机制。保证消费者宕机时消息不丢失
+        acknowledge-mode: manual
+        # 消费者并发数（多线程消费）
+        concurrency: 2
+        max-concurrency: 5
+
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.whu.highlevelconcurrentread.entity

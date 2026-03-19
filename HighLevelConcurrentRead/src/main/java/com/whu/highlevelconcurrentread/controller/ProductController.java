@@ -6,10 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
@@ -51,5 +48,24 @@ public class ProductController{
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(product);
+    }
+
+    /**
+     * PUT /api/products
+     * 修改商品信息
+     * 示例 JSON Body: { "id": 1, "price": 8999.00 }
+     */
+    @PutMapping
+    public ResponseEntity<String> updateProduct(@RequestBody Product product) {
+        if (product.getId() == null) {
+            return ResponseEntity.badRequest().body("修改失败：商品 ID 不能为空");
+        }
+
+        // 核心：直接抛给 Service 更新数据库，然后瞬间返回！
+        // 淘汰缓存的脏活累活，全靠后台的 Canal + RabbitMQ 默默完成。
+        productService.updateProduct(product);
+
+        log.info("API 收到修改请求，数据库更新指令已发出，快速响应前端。商品 ID: {}", product.getId());
+        return ResponseEntity.ok("更新成功");
     }
 }
