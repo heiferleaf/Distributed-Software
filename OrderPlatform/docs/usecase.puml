@@ -1,0 +1,43 @@
+# 用例图（PlantUML）
+
+@startuml
+left to right direction
+skinparam backgroundColor #EEEBDC
+
+actor 用户 as User
+actor 管理员 as Admin
+
+rectangle "电商平台" {
+  usecase "注册" as UC1
+  usecase "登录" as UC2
+  usecase "浏览商品" as UC3
+  usecase "搜索商品" as UC4
+  usecase "查看商品详情" as UC5
+  usecase "加入购物车" as UC6
+  usecase "管理购物车" as UC7
+  usecase "下单" as UC8
+  usecase "查看订单" as UC9
+  usecase "支付订单" as UC10
+  usecase "商品管理" as UC11
+  usecase "订单管理" as UC12
+}
+
+User --> UC1
+User --> UC2
+User --> UC3
+User --> UC4
+User --> UC5
+User --> UC6
+User --> UC7
+User --> UC8
+User --> UC9
+User --> UC10
+
+Admin --> UC11
+Admin --> UC12
+
+UC3 ..> UC5 : <<extend>>
+UC8 ..> UC6 : <<include>>
+UC8 ..> UC7 : <<include>>
+UC10 ..> UC9 : <<extend>>
+@enduml
