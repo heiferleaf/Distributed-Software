@@ -1,0 +1,87 @@
+services:
+  # 数据库 1：ds1
+  mysql0:
+    image: mysql:8.0
+    container_name: medical-mysql0
+    environment:
+      - MYSQL_ROOT_PASSWORD=1234
+      - MYSQL_DATABASE=medical_ds0 # 首次运行容器时创建数据库
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  mysql1:
+    image: mysql:8.0
+    container_name: medical-mysql1
+    environment:
+      - MYSQL_ROOT_PASSWORD=1234
+      - MYSQL_DATABASE=medical_ds1
+    ports:
+      - "3308:3306"
+    volumes:
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: medical-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      # 1. 基础节点配置
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      # 2. 监听器配置（重点：去掉 INTERNAL，改用标准的 PLAINTEXT）
+      # PLAINTEXT 给 Docker 内部用 (29092)
+      # EXTERNAL  给宿主机 IDEA 用 (9092)
+      # CONTROLLER 给集群控制面用 (9093)
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://medical-kafka:29092,EXTERNAL://localhost:9092'
+
+      # 3. 安全协议映射（官方镜像建议全部加单引号）
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+
+      # 4. 其他核心配置
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@medical-kafka:9093'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+
+      # 5. 自动创建 Topic 等常规配置
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+
+    healthcheck:
+      test: [ "CMD", "bash", "-c", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ====================================================================
+  # Kafdrop：可视化监控界面
+  # 职能：能直观看到消息是否进了死信队列，Offset 移动到了哪里
+  # ====================================================================
+  kafdrop:
+    image: obsidiandynamics/kafdrop
+    container_name: medical-kafdrop
+    ports:
+      - "9000:9000" # 浏览器访问 http://localhost:9000 即可进入监控台
+    environment:
+      - KAFKA_BROKERCONNECT=kafka:29092 # 告诉监控台去哪里连接消息引擎
+    depends_on:
+      kafka:
+        condition: service_healthy  # 等 Kafka 真正就绪
+
+  sentinel:
+    image: bladex/sentinel-dashboard:latest
+    container_name: medical-sentinel
+    ports:
+      - "8858:8858"
+    environment:
+      - SENTINEL_DASHBOARD_AUTH_USERNAME=sentinel
+      - SENTINEL_DASHBOARD_AUTH_PASSWORD=sentinel

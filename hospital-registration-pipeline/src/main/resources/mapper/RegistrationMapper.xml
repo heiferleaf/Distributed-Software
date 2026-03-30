@@ -1,0 +1,30 @@
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.whu.hospitalregistrationpipeline.mapper.RegistrationMapper">
+
+    <resultMap id="resultMap" type="Registration">
+        <id column="id" property="id"/>
+        <result column="registration_id" property="registrationId"/>
+        <result column="patient_id" property="patientId"/>
+        <result column="doctor_id" property="doctorId"/>
+        <result column="status" property="status"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <sql id="props">
+        registration_id, patient_id, doctor_id, status, create_time
+    </sql>
+
+    <insert id="insertRegistration" parameterType="Registration">
+        insert into t_registration (<include refid="props"/>)
+        values (#{registrationId},#{patientId},#{doctorId},#{status},#{createTime})
+    </insert>
+
+    <select id="selectRegistrationById" resultMap="resultMap" parameterType="java.lang.Long">
+        select *
+        from t_registration where patient_id = #{patientId};
+    </select>
+
+</mapper>

@@ -1,0 +1,56 @@
+# src/main/resources/sharding.yaml
+
+mode:
+  type: Standalone
+  repository:
+    type: JDBC
+
+dataSources:  # ⚠️ 注意：这里是 dataSources（驼峰），不是 datasource
+  ds0:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://localhost:3307/medical_ds0?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: "1234"
+  ds1:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://localhost:3308/medical_ds1?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: "1234"
+
+rules:
+  - !SHARDING
+    tables:
+      t_registration:
+        actualDataNodes: "ds$->{0..1}.t_registration_$->{0..1}"
+        databaseStrategy:
+          standard:
+            shardingColumn: patient_id
+            shardingAlgorithmName: database-inline
+        tableStrategy:
+          standard:
+            shardingColumn: registration_id
+            shardingAlgorithmName: table-inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
+
+    shardingAlgorithms:
+      database-inline:
+        type: INLINE
+        props:
+          algorithm-expression: "ds$->{Math.abs(patient_id.hashCode()) % 2}"
+      table-inline:
+        type: INLINE
+        props:
+          algorithm-expression: "t_registration_$->{Math.abs(registration_id.hashCode()) % 2}"
+
+    keyGenerators:
+      snowflake:
+        type: SNOWFLAKE
+        props:
+          worker-id: 123
+
+props:
+  sql-show: true
