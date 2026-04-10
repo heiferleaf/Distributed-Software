@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: gateway-service
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+
+  cloud:
+    compatibility-verifier:
+      enabled: false
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      discovery:
+        service-name: ${spring.application.name}
+        ip: ${NACOS_DISCOVERY_IP:}
+        port: ${server.port:8080}
+        namespace: public # 默认的命名空间
+        group: DEFAULT_GROUP # 默认的分组
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+      routes:
+        - id: user_service_route
+          uri: lb://user-service
+          predicates:
+            - Path=/api/user/**
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+        - id: product_service_route
+          uri: lb://product-service
+          predicates:
+            - Path=/api/product/**
+          filters:
+            - StripPrefix=1
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+server:
+  port: 8080

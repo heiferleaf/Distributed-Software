@@ -1,0 +1,212 @@
+services:
+
+  nacos:
+    image: nacos/nacos-server:v2.2.3
+    container_name: spike-nacos
+    environment:
+      MODE: standalone
+      PREFER_HOST_NAME: hostname
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    volumes:
+      - "./nacos/nacos-data:/home/nacos/data"
+    networks:
+      - spike-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8848/nacos/v1/console/health/readiness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: spike-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: spike_db
+      MYSQL_USER: spike_user
+      MYSQL_PASSWORD: spike_password
+    command: --server-id=1 --log-bin=mysql-bin --binlog-format=ROW # 开启 binlog，Canal 必需
+    ports:
+      - "3307:3306"
+    volumes:
+      - "./mysql/data:/var/lib/mysql"
+      - "./mysql/init:/docker-entrypoint-initdb.d"
+    networks:
+      - spike-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: spike-redis
+    ports:
+      - "6380:6379"
+    networks:
+      - spike-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: spike-rabbitmq
+    ports:
+      - "5672:5672"   # 消息通讯端口
+      - "15672:15672" # 后台管理页面端口
+    networks:
+      - spike-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  canal:
+    image: canal/canal-server:v1.1.8
+    container_name: spike-canal
+    ports:
+      - "11111:11111"
+    environment:
+      - canal.auto.scan=false
+      - canal.destinations=example
+      - canal.instance.master.address=mysql:3306
+      - canal.instance.dbUsername=spike_user
+      - canal.instance.dbPassword=spike_password
+      - canal.instance.connectionCharset=UTF-8
+      - canal.instance.tsdb.enable=true
+      - canal.instance.gtidon=false
+      # 消息投递到 RabbitMQ 的配置
+      - canal.serverMode=rabbitmq
+      - canal.mq.servers=rabbitmq:5672
+      - canal.mq.vhost=/
+      - canal.mq.exchange=canal.exchange
+      - canal.mq.topic=canal.routing.key
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - spike-network
+    restart: unless-stopped
+
+  seata:
+    image: seataio/seata-server:1.5.2
+    container_name: spike-seata
+    ports:
+      - "8091:8091"
+      - "7091:7091"
+    environment:
+      - SEATA_IP=seata
+      - SEATA_PORT=8091
+      - STORE_MODE=file
+    networks:
+      - spike-network
+    restart: unless-stopped
+
+  user-service:
+    build:
+      context: .
+      dockerfile: ./spike-user-service/Dockerfile
+    container_name: spike-user-service
+    environment:
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+      # 应用程序参数（Spring Boot 读取）
+      spring.application.name: user-service
+      server.port: 8081
+      # Nacos 连接配置
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_DISCOVERY_IP: user-service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      spring.cloud.nacos.discovery.service-name: user-service
+      spring.config.import: "optional:nacos:"
+    ports:
+      - "8081:8081"
+    depends_on:
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - spike-network
+    restart: unless-stopped
+
+  product-service:
+    build:
+      context: .
+      dockerfile: ./spike-product-service/Dockerfile
+    container_name: spike-product-service
+    environment:
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+      spring.application.name: product-service
+      server.port: 8082
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_DISCOVERY_IP: product-service
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      spring.cloud.nacos.discovery.service-name: product-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - spike-network
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: ./gateway/Dockerfile
+    container_name: spike-gateway
+    environment:
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+      spring.application.name: gateway-service
+      server.port: 8080
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_DISCOVERY_IP: gateway
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      spring.cloud.nacos.discovery.service-name: gateway-service
+    ports:
+      - "8080:8080"
+    depends_on:
+      nacos:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - spike-network
+    restart: unless-stopped
+
+networks:
+  spike-network:
+    driver: bridge

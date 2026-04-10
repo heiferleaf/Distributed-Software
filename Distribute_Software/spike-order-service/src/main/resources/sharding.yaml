@@ -1,0 +1,40 @@
+mode:
+  type: Standalone
+  repository:
+    type: JDBC
+
+dataSources:
+  ds0:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://127.0.0.1:3307/spike_db?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    username: spike_user
+    password: "spike_password"
+
+rules:
+  - !SHARDING
+    tables:
+      orders:
+        actualDataNodes: "ds0.orders_$->{0..1}"
+        tableStrategy:
+          standard:
+            shardingColumn: order_id
+            shardingAlgorithmName: table-inline
+        keyGenerateStrategy:
+          column: order_id
+          keyGeneratorName: snowflake
+
+    shardingAlgorithms:
+      table-inline:
+        type: INLINE
+        props:
+          algorithm-expression: "orders_$->{Math.abs(order_id.hashCode()) % 2}"
+          allow-range-query-with-inline-sharding: true
+
+    keyGenerators:
+      snowflake:
+        type: SNOWFLAKE
+        props:
+          worker-id: 124 # 订单服务的worker id，与商品服务不同以避免冲突
+props:
+  sql-show: true

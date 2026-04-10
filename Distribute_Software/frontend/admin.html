@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>分布式秒杀系统测试客户端 - 管理员模式</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f8f9fa; }
+        .container { display: flex; gap: 20px; flex-wrap: wrap; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 350px; }
+        input { display: block; width: 90%; margin-bottom: 10px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #007bff; color: white; border: none; padding: 10px; cursor: pointer; border-radius: 4px; width: 100%; margin-bottom: 5px; }
+        button:hover { background: #0056b3; }
+        pre { background: #343a40; color: #fff; padding: 10px; border-radius: 4px; min-height: 100px; overflow-x: auto; }
+        .header { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>系统测试控制台 - 【管理员模式】</h1>
+        <p>用于测试商品管理操作（增加、修改）。请使用管理员账号进行身份验证。</p>
+        <a href="index.html" style="display:inline-block; padding:8px 15px; background:#28a745; color:white; text-decoration:none; border-radius:4px;">切换回普通用户模式</a>
+    </div>
+
+    <div class="container">
+        <!-- 登录栏 -->
+        <div class="card" style="width: 300px;">
+            <h3>🔑 管理员登录</h3>
+            <input type="text" id="login-username" placeholder="管理员账号 (如: admin)" />
+            <input type="password" id="login-password" placeholder="密码" />
+            <button onclick="login()" style="background: #343a40;">管理员登录获取 Token</button>
+            <p style="font-size:12px;color:gray">注意：前后端 Token 默认存放在 LocalStorage，两个页面共享该凭证。</p>
+            <button onclick="logout()" style="background:#dc3545;">退出登录</button>
+        </div>
+
+        <!-- 商品管理栏 (游标/管理) -->
+        <div class="card">
+            <h3>🛍️ 后台商品查询 (免校验验证)</h3>
+             <div style="display:flex;gap:5px;margin-bottom:10px;">
+                 <input type="number" id="product-id" placeholder="商品ID(查单件)" />
+                 <button onclick="getProduct()" style="width:60px;">查</button>
+             </div>
+
+             <button onclick="listProducts()" style="background:#17a2b8; margin-bottom: 10px;">获取游标列表</button>
+        </div>
+
+        <!-- 只有管理员能进行的操作 -->
+        <div class="card">
+            <h3>⚠️ 管理员操作区 (需验证 ADMIN 权限)</h3>
+
+             <div style="margin-top:10px; padding-top:10px;">
+                 <h4>添加新商品</h4>
+                 <input type="text" id="new-prod-name" placeholder="商品名字" />
+                 <input type="number" id="new-prod-price" placeholder="商品价格" />
+                 <input type="number" id="new-prod-stock" placeholder="初始库存 (将被预热到Redis)" />
+                 <button onclick="addProduct()" style="background:#dc3545;">创建商品并预热库存</button>
+             </div>
+
+             <div style="border-top:1px solid #eee; margin-top:20px; padding-top:10px;">
+                 <h4>修改已有商品属性</h4>
+                 <input type="number" id="update-prod-id" placeholder="要修改的商品ID (雪花算法)" />
+                 <input type="text" id="update-prod-name" placeholder="更新后的商品名字 (选填)" />
+                 <input type="number" id="update-prod-price" placeholder="更新后的价格 (选填)" />
+                 <input type="number" id="update-prod-stock" placeholder="增加或减少的库存数量 (+/-) (选填)" />
+                 <button onclick="updateProduct()" style="background:#ffc107; color: #000;">修改商品 (触发 Binlog 和清缓存MQ)</button>
+             </div>
+        </div>
+    </div>
+
+    <h3>📜 控制台输出 (Admin)</h3>
+    <pre id="output">等待操作...</pre>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api'; // 网关地址
+        let cursorHistory = [0];
+        let currentCursor = 0;
+
+        // 统一打印日志
+        function log(msg) {
+            const out = document.getElementById('output');
+            out.innerText = typeof msg === 'object' ? JSON.stringify(msg, null, 2) : msg;
+        }
+
+        // 带自动 Refresh 拦截的 Fetch 封装
+        async function fetchWithAuth(url, options = {}) {
+            let accessToken = localStorage.getItem('accessToken');
+            const refreshToken = localStorage.getItem('refreshToken');
+
+            if (!options.headers) options.headers = {};
+            if (accessToken) options.headers['Authorization'] = 'Bearer ' + accessToken;
+
+            let response = await fetch(API_BASE + url, options);
+
+            // 当网关/后端返回401（Token过期）时，尝试使用refreshToken刷新
+            if (response.status === 401 && refreshToken) {
+                log('Access Token 已过期或无效，正在尝试刷新...');
+                const refreshRes = await fetch(API_BASE + '/user/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refreshToken })
+                });
+
+                if (refreshRes.ok) {
+                    const tokens = await refreshRes.json();
+                    localStorage.setItem('accessToken', tokens.data.accessToken);
+                    localStorage.setItem('refreshToken', tokens.data.refreshToken);
+                    log('Refresh 成功，重试原请求...');
+
+                    options.headers['Authorization'] = 'Bearer ' + tokens.data.accessToken;
+                    response = await fetch(API_BASE + url, options);
+                } else {
+                    log('Refresh Token 也已失效，请重新登录！');
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    return refreshRes; // 返回失败的response
+                }
+            }
+            return response;
+        }
+
+        // 管理员登录
+        async function login() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            log('正在验证管理员登录...');
+            const res = await fetch(API_BASE + '/user/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (res.ok && data.data) {
+                 localStorage.setItem('accessToken', data.data.accessToken);
+                 localStorage.setItem('refreshToken', data.data.refreshToken);
+                 log('管理员鉴权成功！\n' + JSON.stringify(data, null, 2));
+                 if (data.data.role !== 'ADMIN') {
+                     log('⚠️ 警告: 您刚才登录的账号不是 ADMIN，这可能导致后续操作被网关或服务拦截！');
+                 }
+            } else {
+                 log('登录失败：\n' + JSON.stringify(data, null, 2));
+            }
+        }
+
+        // 登出
+        async function logout() {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) return log('本地未发现 Token');
+            log('正在安全登出管理员身份...');
+            const res = await fetchWithAuth('/user/logout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken })
+            });
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            log(res.ok ? '退出成功，管理员 Token 已经销毁！' : '退出请求失败');
+        }
+
+        // 游标拉取列表
+        async function listProducts() {
+            log(`正在拉取商品列表... (游标：${currentCursor})`);
+            const res = await fetchWithAuth(`/product/list?cursor=${currentCursor}&limit=5`);
+            const data = await res.json();
+
+            if (res.ok && data.data && data.data.length > 0) {
+                const nextCursor = typeof data.next_cursor === 'string' ? data.next_cursor : data.next_cursor.toString();
+                if (!cursorHistory.includes(nextCursor)) {
+                    cursorHistory.push(nextCursor);
+                }
+                currentCursor = nextCursor;
+
+                log(`下一次游标：${currentCursor}\n` + JSON.stringify(data, null, 2));
+
+                let listHtml = "<h3>当前已存在商品 (用于复制 ID 或 直接操作)</h3><ul>";
+                data.data.forEach(item => {
+                    listHtml += `<li style="margin-bottom: 8px;">
+                        <b>ID:</b> ${item.id} | <b>名称:</b> ${item.name} | <b>价格:</b> ￥${item.price} | <b>库存:</b> ${item.stock}
+                        <button onclick="getProduct('${item.id}')" style="width: auto; padding: 2px 8px; font-size: 12px; margin-left: 10px; background: #28a745;">查询详情</button>
+                        <button onclick="document.getElementById('update-prod-id').value='${item.id}'" style="width: auto; padding: 2px 8px; font-size: 12px; margin-left: 5px; background: #ffc107; color: black;">填入修改栏</button>
+                    </li>`;
+                });
+                listHtml += "</ul>";
+
+                let displayDiv = document.getElementById("product-display");
+                if (!displayDiv) {
+                    displayDiv = document.createElement("div");
+                    displayDiv.id = "product-display";
+                    displayDiv.style.background = "#fff";
+                    displayDiv.style.padding = "10px";
+                    displayDiv.style.marginBottom = "20px";
+                    document.getElementById("output").parentNode.insertBefore(displayDiv, document.getElementById("output"));
+                }
+
+                listHtml += `
+                  <div style="margin-top: 15px; border-top: 1px solid #ccc; padding-top: 10px;">
+                      <button onclick="resetCursor()" style="width: auto; background: #6c757d; font-size: 12px; padding: 5px;">返回第一页 / 刷新</button>
+                  </div>
+                `;
+                displayDiv.innerHTML = listHtml;
+            } else {
+                log('没有数据：' + JSON.stringify(data, null, 2));
+            }
+        }
+
+        function resetCursor() {
+            cursorHistory = [0];
+            currentCursor = 0;
+            listProducts();
+        }
+
+        // 查询单条商品
+        async function getProduct(passedId) {
+            const id = passedId || document.getElementById('product-id').value;
+            if (!id) return log("请输入查询ID");
+            log(`正在查询商品ID: ${id}...`);
+            const res = await fetchWithAuth(`/product/${id}`);
+            const data = await res.json();
+            log(data);
+        }
+
+        // 创建新商品 (Admin 权限专属)
+        async function addProduct() {
+            const name = document.getElementById('new-prod-name').value;
+            const price = document.getElementById('new-prod-price').value;
+            const stock = document.getElementById('new-prod-stock').value;
+
+            if (!name || !price || !stock) return log("名字、价格和库存不能为空");
+            log('正在发起创建商品请求 (需 ADMIN 权限角色凭据)...');
+
+            let res = await fetchWithAuth('/product/admin/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, price: parseFloat(price), stock: parseInt(stock) })
+            });
+            const data = await res.json();
+            log(JSON.stringify(data, null, 2));
+        }
+
+        // 修改商品信息 (Admin 权限专属)
+        async function updateProduct() {
+            const id = document.getElementById('update-prod-id').value;
+            const name = document.getElementById('update-prod-name').value;
+            const price = document.getElementById('update-prod-price').value;
+            const stock = document.getElementById('update-prod-stock').value;
+
+            if (!id) return log("商品ID不能为空");
+
+            log(`正在提交商品更新请求，目标 ID: ${id} ...`);
+            let body = {};
+            if (name) body.name = name;
+            if (price) body.price = parseFloat(price);
+            if (stock) body.stock = parseInt(stock);
+
+            let res = await fetchWithAuth(`/product/admin/update/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            const data = await res.json();
+            log(`请重点注意：这里修改完成落库后，后台通过 Canal 是否捕捉到了 Binlog，以及MQ能否收到消息驱除了旧的Redis缓存。\n` + JSON.stringify(data, null, 2));
+        }
+    </script>
+</body>
+</html>

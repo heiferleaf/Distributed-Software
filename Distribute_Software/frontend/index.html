@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>分布式秒杀系统测试客户端</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f4f9; }
+        .container { display: flex; gap: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 300px; }
+        input { display: block; width: 90%; margin-bottom: 10px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #007bff; color: white; border: none; padding: 10px; cursor: pointer; border-radius: 4px; width: 100%; }
+        button:hover { background: #0056b3; }
+        pre { background: #333; color: #fff; padding: 10px; border-radius: 4px; min-height: 100px; overflow-x: auto; }
+        .header { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>系统测试控制台 - 【普通用户模式】</h1>
+        <p>利用原生 JS Fetch API 与 网关 (http://localhost:8080) 进行交互和拦截验证</p>
+        <a href="admin.html" style="display:inline-block; padding:8px 15px; background:#343a40; color:white; text-decoration:none; border-radius:4px;">切换到管理员控制台</a>
+    </div>
+
+    <div class="container">
+        <!-- 注册栏 -->
+        <div class="card">
+            <h3>📝 用户注册</h3>
+            <input type="text" id="reg-username" placeholder="用户名" />
+            <input type="password" id="reg-password" placeholder="密码" />
+            <button onclick="register()">注册</button>
+        </div>
+
+        <!-- 登录栏 -->
+        <div class="card">
+            <h3>🔑 用户登录</h3>
+            <input type="text" id="login-username" placeholder="用户名" />
+            <input type="password" id="login-password" placeholder="密码" />
+            <button onclick="login()">登录 / 获取双Token</button>
+        </div>
+
+        <!-- 商品管理栏 (游标/管理) -->
+        <div class="card" style="width: 350px;">
+            <h3>🛍️ 商品服务测试</h3>
+             <div style="display:flex;gap:5px;margin-bottom:10px;">
+                 <input type="number" id="product-id" placeholder="商品ID(查单件)" />
+                 <button onclick="getProduct()" style="width:60px;">查</button>
+             </div>
+
+             <button onclick="listProducts()" style="background:#17a2b8; margin-bottom: 10px;">获取游标列表(防深分页)</button>
+        </div>
+
+        <!-- API 测试与登出 -->
+        <div class="card" style="width: 300px;">
+            <h3>🛠️ 鉴权测试</h3>
+            <button onclick="callProtectedApi()" style="background:#28a745; margin-bottom: 10px;">请求受保护数据 (如个人信息)</button>
+            <button onclick="logout()" style="background:#dc3545;">退出登录 (拉黑Token)</button>
+            <p style="font-size:12px;color:gray">当前保存在 LocalStorage 中的 Token 会随请求头 Authorization 自动发出。</p>
+        </div>
+
+        <!-- 订单与秒杀测试栏 -->
+        <div class="card" style="width: 350px;">
+            <h3>🛍️ 订单与秒杀测试</h3>
+             <div style="display:flex;gap:5px;flex-direction:column;margin-bottom:10px;">
+                 <input type="number" id="order-user-id" placeholder="用户ID (如: 1)" />
+                 <input type="number" id="order-product-id" placeholder="商品ID (如: 12345)" />
+                 <input type="number" id="order-amount" placeholder="购买数量 (如: 1)" value="1" />
+                 <button onclick="createOrder()" style="background:#ff8c00;">提交订单 (异步下单)</button>
+             </div>
+
+             <div style="border-top:1px solid #ccc; margin-top:15px; padding-top:15px;">
+                 <input type="number" id="poll-order-id" placeholder="填入要查询的订单ID" />
+                 <button onclick="pollOrderStatus()" style="background:#17a2b8;">查询订单状态</button>
+             </div>
+        </div>
+
+        <!-- 进阶机制：故障演练与混沌测试 -->
+        <div class="card" style="width: 350px; background-color: #ffe8e8; border: 1px solid #f5c6c6;">
+            <h3>🛠️ 混沌工程 / 强一致性验证</h3>
+            <p style="font-size:12px;color:#c82333;">可以通过注入预设崩溃点，验证整个分布式的容灾和悬挂恢复能力。</p>
+
+            <button onclick="chaosTestOrderFail()" style="background:#dc3545;margin-bottom:10px;">测试 TCC 回滚 (模拟订单断电)</button>
+            <p style="font-size:12px;color:gray">说明：这会给订单请求打上标记。在 MQ 消费时，当库存服务已经成功冻结了商品后，订单服务**主动抛出异常模拟宕机**。你能观察到 Seata TM 捕捉到异常并发起 `Cancel` 帮库存服务自动解除刚刚被冻结的那部分商品，同时留下 `tcc_transaction_logs` 以防下一次悬挂。</p>
+
+        </div>
+    </div>
+
+    <h3>📜 控制台输出</h3>
+    <pre id="output">等待操作...</pre>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api'; // 网关地址
+        let cursorHistory = [0]; // 用于记录游标历史
+        let currentCursor = 0;
+
+        // 统一打印日志
+        function log(msg) {
+            const out = document.getElementById('output');
+            out.innerText = typeof msg === 'object' ? JSON.stringify(msg, null, 2) : msg;
+        }
+
+        // 带自动 Refresh 拦截的 Fetch 封装
+        async function fetchWithAuth(url, options = {}) {
+            let accessToken = localStorage.getItem('accessToken');
+            const refreshToken = localStorage.getItem('refreshToken');
+
+            if (!options.headers) options.headers = {};
+            if (accessToken) options.headers['Authorization'] = 'Bearer ' + accessToken;
+
+            let response = await fetch(API_BASE + url, options);
+
+            // 当网关/后端返回401（Token过期）时，尝试使用refreshToken刷新
+            if (response.status === 401 && refreshToken) {
+                log('Access Token 已过期或无效，正在尝试刷新...');
+                const refreshRes = await fetch(API_BASE + '/user/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refreshToken })
+                });
+
+                if (refreshRes.ok) {
+                    const tokens = await refreshRes.json();
+                    localStorage.setItem('accessToken', tokens.data.accessToken);
+                    localStorage.setItem('refreshToken', tokens.data.refreshToken);
+                    log('Refresh 成功，重试原请求...');
+
+                    // 更新为新token重试
+                    options.headers['Authorization'] = 'Bearer ' + tokens.data.accessToken;
+                    response = await fetch(API_BASE + url, options);
+                } else {
+                    log('Refresh Token 也已失效，请重新登录！');
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    return refreshRes; // 返回失败的response
+                }
+            }
+            return response;
+        }
+
+        // 注册 (不鉴权)
+        async function register() {
+            const username = document.getElementById('reg-username').value;
+            const password = document.getElementById('reg-password').value;
+            log('正在注册...');
+            const res = await fetch(API_BASE + '/user/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            log(data);
+        }
+
+        // 登录 (不鉴权)
+        async function login() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            log('正在登录...');
+            const res = await fetch(API_BASE + '/user/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (res.ok && data.data) {
+                 // 保存双 Token
+                 localStorage.setItem('accessToken', data.data.accessToken);
+                 localStorage.setItem('refreshToken', data.data.refreshToken);
+                 log('登录成功，Token已保存：\n' + JSON.stringify(data, null, 2));
+            } else {
+                 log('登录失败：\n' + JSON.stringify(data, null, 2));
+            }
+        }
+
+        // 获取资源 (需鉴权)
+        async function callProtectedApi() {
+            log('正在请求受保护数据...');
+            const res = await fetchWithAuth('/user/info', { method: 'GET' });
+            if (res.status === 401) {
+                log('未授权，请检查是否登录或Token已被拉黑');
+            } else {
+                const data = await res.json();
+                log(data);
+            }
+        }
+
+        // 退出登录 (调用后端逻辑把Token放黑名单)
+        async function logout() {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) {
+                log('本地未发现Token');
+                return;
+            }
+            log('正在登出...');
+            const res = await fetchWithAuth('/user/logout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken })
+            });
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+
+            if(res.ok) {
+                log('退出成功，Token 已经销毁/拉入黑名单');
+            } else {
+                log('API 调用失败');
+            }
+        }
+
+        // -------- 商品服务 API 测试 --------
+
+        // 游标拉取列表 (下一页)
+        async function listProducts() {
+            log(`正在使用游标 ${currentCursor} 拉取商品列表...`);
+            const res = await fetchWithAuth(`/product/list?cursor=${currentCursor}&limit=5`);
+            const data = await res.json();
+
+            if (res.ok && data.data && data.data.length > 0) {
+                // 保存下一页的游标
+                const nextCursor = typeof data.next_cursor === 'string' ? data.next_cursor : data.next_cursor.toString();
+                if (!cursorHistory.includes(nextCursor)) {
+                    cursorHistory.push(nextCursor);
+                }
+                currentCursor = nextCursor;
+
+                log(`已拉取 ${data.data.length} 条数据，下一次游标：${currentCursor}\n` + JSON.stringify(data, null, 2));
+                // 将数据列表可视化出来，方便点击查看
+                let listHtml = "<h3>商品列表</h3><ul>";
+                data.data.forEach(item => {
+                    listHtml += `<li style="margin-bottom: 8px;">
+                        <b>名称:</b> ${item.name} | <b>价格:</b> ￥${item.price} | <b>库存:</b> ${item.stock}
+                        <button onclick="getProduct('${item.id}')" style="width: auto; padding: 3px 8px; font-size: 12px; margin-left: 10px; background: #28a745;">查看详情</button>
+                    </li>`;
+                });
+                listHtml += "</ul>";
+                // 暂时借用 output 区域上方的一个新 div，如果没创建则创建一个
+                let displayDiv = document.getElementById("product-display");
+                if (!displayDiv) {
+                    displayDiv = document.createElement("div");
+                    displayDiv.id = "product-display";
+                    displayDiv.style.background = "#fff";
+                    displayDiv.style.padding = "10px";
+                    displayDiv.style.marginBottom = "20px";
+                    document.getElementById("output").parentNode.insertBefore(displayDiv, document.getElementById("output"));
+                }
+
+                // 增加重置/上一页的功能按钮
+                listHtml += `
+                  <div style="margin-top: 15px; border-top: 1px solid #ccc; padding-top: 10px;">
+                      <button onclick="resetCursor()" style="width: auto; background: #6c757d; font-size: 12px; padding: 5px;">返回第一页 / 刷新</button>
+                  </div>
+                `;
+                displayDiv.innerHTML = listHtml;
+            } else {
+                log('没有更多数据或请求失败：' + JSON.stringify(data, null, 2));
+            }
+        }
+
+        // 重置游标返回首页
+        function resetCursor() {
+            cursorHistory = [0];
+            currentCursor = 0;
+            listProducts();
+        }
+
+        // 查询单条商品 (触发旁路击穿防范等)
+        async function getProduct(passedId) {
+            const id = passedId || document.getElementById('product-id').value;
+            if (!id) return log("请输入查询ID");
+
+            log(`正在查询商品详情... (ID: ${id})`);
+            const res = await fetchWithAuth(`/product/${id}`);
+            const data = await res.json();
+            log(data);
+        }
+
+        // -------- 订单与秒杀 API 测试 --------
+
+        // 创建订单 (秒杀下单)
+        async function createOrder() {
+            const userId = document.getElementById('order-user-id').value;
+            const productId = document.getElementById('order-product-id').value;
+            const amount = document.getElementById('order-amount').value;
+
+            if (!userId || !productId || !amount) {
+                return log('用户ID、商品ID 和购买数量为必填项！');
+            }
+
+            return doCreateOrder(userId, productId, amount, null);
+        }
+
+        // 混沌测试下单发点
+        async function chaosTestOrderFail() {
+            const userId = document.getElementById('order-user-id').value;
+            const productId = document.getElementById('order-product-id').value;
+            const amount = document.getElementById('order-amount').value;
+
+            if (!userId || !productId || !amount) {
+                return log('请先填入完整的用户ID、商品ID 和数量，再点击混沌测试！');
+            }
+
+            log('⚡ 正在发起 【分布式回滚混沌测试】...');
+            return doCreateOrder(userId, productId, amount, 'ORDER_FAIL');
+        }
+
+        async function doCreateOrder(userId, productId, amount, chaosType) {
+            log('正在提交订单 MQ 消息...');
+            const params = new URLSearchParams({
+                userId: userId,
+                productId: productId,
+                amount: amount
+            });
+            if (chaosType) params.append('chaosType', chaosType);
+
+            const res = await fetchWithAuth('/order/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params
+            });
+            const data = await res.json();
+            log(JSON.stringify(data, null, 2));
+
+            // 如果成功返回 orderId，自动填充到底部的轮询查询框中，便于顺手点击查询
+            if (data && data.orderId) {
+                document.getElementById('poll-order-id').value = data.orderId;
+                startAutoPolling(data.orderId); // 自动开启轮询
+            }
+        }
+
+        // 轮询查询订单状态
+        let pollInterval = null;
+        async function pollOrderStatus() {
+            const orderId = document.getElementById('poll-order-id').value;
+            if (!orderId) return log('请输入订单ID');
+
+            log(`正在查询订单 ${orderId} 状态...`);
+            const res = await fetchWithAuth(`/order/status/${orderId}`);
+            let data = {};
+            try {
+                data = await res.json();
+            } catch(e) {
+                data = await res.text();
+            }
+            log(JSON.stringify(data, null, 2));
+            return data;
+        }
+
+        // 自动轮询小助手
+        function startAutoPolling(orderId) {
+            if (pollInterval) clearInterval(pollInterval);
+            let attempts = 0;
+            log(`[自动轮询已开启] 正在等待后台与MQ处理，每隔1秒检测一次订单: ${orderId}`);
+
+            pollInterval = setInterval(async () => {
+                attempts++;
+                const statusData = await pollOrderStatus();
+                // 停止条件：已被创建、创建失败、或轮询超过 10 次
+                if (statusData && (statusData.status === 'CREATED' || statusData.status === 'FAILED')) {
+                    clearInterval(pollInterval);
+                    log(`[自动轮询已停止] 最终结果：${statusData.status}\n详细信息: ` + JSON.stringify(statusData, null, 2));
+                } else if (attempts >= 10) {
+                    clearInterval(pollInterval);
+                    log(`[自动轮询已停止] 超过10秒排队未出结果，请稍后手动点击查询按钮。`);
+                }
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

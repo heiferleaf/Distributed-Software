@@ -1,0 +1,42 @@
+# src/main/resources/sharding.yaml
+
+mode:
+  type: Standalone
+  repository:
+    type: JDBC
+
+dataSources:  # ⚠️ 注意：这里是 dataSources（驼峰），不是 datasource
+  ds0:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://localhost:3307/spike_db?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true
+    username: spike_user
+    password: "spike_password"
+
+rules:
+  - !SHARDING
+    tables:
+      product:
+        actualDataNodes: "ds0.product_$->{0..1}"
+        tableStrategy:
+          standard:
+            shardingColumn: id
+            shardingAlgorithmName: table-inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
+
+    shardingAlgorithms:
+      table-inline:
+        type: INLINE
+        props:
+          algorithm-expression: "product_$->{Math.abs(id.hashCode()) % 2}"
+          allow-range-query-with-inline-sharding: true
+
+    keyGenerators:
+      snowflake:
+        type: SNOWFLAKE
+        props:
+          worker-id: 123
+props:
+  sql-show: true

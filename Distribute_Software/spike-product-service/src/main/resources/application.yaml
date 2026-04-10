@@ -1,0 +1,52 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: product-service
+
+  main:
+    allow-bean-definition-overriding: true
+
+  datasource:
+    driver-class-name: org.apache.shardingsphere.driver.ShardingSphereDriver
+    url: jdbc:shardingsphere:classpath:sharding.yaml
+
+  cloud:
+    compatibility-verifier:
+      enabled: false
+    nacos:
+      config:
+        import-check:
+          enabled: false
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      discovery:
+        service-name: ${spring.application.name}
+        ip: ${NACOS_DISCOVERY_IP:localhost}
+        port: ${server.port:8082}
+
+
+  # Redis & Redisson
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6380} # 根据 docker-compose.yaml 中的 localhost 映射
+  redis:
+    redisson:
+      config: |
+          singleServerConfig:
+            address: "redis://${REDIS_HOST:127.0.0.1}:${REDIS_PORT:6380}"
+
+  # RabbitMQ
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+
+  jpa:
+    hibernate:
+      ddl-auto: none # 分表由之前 init.sql 控制
+    show-sql: true
+    database-platform: org.hibernate.dialect.MySQL8Dialect

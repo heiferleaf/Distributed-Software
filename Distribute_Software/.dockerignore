@@ -1,0 +1,29 @@
+.git
+.gitignore
+.idea
+*.iml
+target
+**/target
+**/node_modules
+**/.classpath
+**/.project
+**/.settings
+.mvn
+.settings
+*.log
+*.class
+*.jar
+*.war
+*.ear
+tmp
+.DS_Store
+docker-compose.override.yml
+**/mysql/data
+**/nacos/nacos-data
+# Keep pom.xml and Dockerfiles so builds work
+!pom.xml
+!**/pom.xml
+!**/Dockerfile
+# Keep mvnw scripts if you use them
+!mvnw
+!mvnw.cmd

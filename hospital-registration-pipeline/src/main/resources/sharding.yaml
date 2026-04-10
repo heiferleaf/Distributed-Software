@@ -51,6 +51,5 @@ rules:
         type: SNOWFLAKE
         props:
           worker-id: 123
-
 props:
   sql-show: true
