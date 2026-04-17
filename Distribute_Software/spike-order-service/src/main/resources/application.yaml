@@ -10,7 +10,7 @@ spring:
     compatibility-verifier:
       enabled: false
     nacos:
-      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1}:8848
       discovery:
         service-name: ${spring.application.name}
         ip: ${NACOS_DISCOVERY_IP:127.0.0.1}
@@ -18,8 +18,21 @@ spring:
       config:
         import-check:
           enabled: false
-        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1}:8848
         file-extension: yaml
+    sentinel:
+      transport:
+        dashboard: ${SENTINEL_SERVER_ADDR:127.0.0.1}:8085
+        port: 8179
+      datasource:
+        ds1:
+          nacos:
+            server-addr: ${NACOS_SERVER_ADDR:127.0.0.1}:8848
+            data-id: ${spring.application.name}-sentinel.yaml
+            group-id: SENTINEL_GROUP
+            namespace: public
+            rule-type: flow
+
   config:
     import: "optional:nacos:${spring.application.name}.yaml"
   data:

@@ -5,7 +5,7 @@ WORKDIR /app
 # 为了利用构建缓存，先复制所有的 pom 文件
 COPY pom.xml ./
 COPY gateway/pom.xml ./gateway/
-COPY spike-user-service/pom.xml ./spike-user-service/
+COPY gataway/src ./gateway/src
 
 # 下载依赖
 # RUN mvn dependency:go-offline -B -pl gateway -am

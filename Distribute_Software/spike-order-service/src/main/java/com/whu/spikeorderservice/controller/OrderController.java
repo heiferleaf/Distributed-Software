@@ -61,6 +61,8 @@ public class OrderController {
             // Order order = orderService.getById(orderId);
             // return ResponseEntity.ok(order);
             return ResponseEntity.ok("{\"status\": \"CREATED\", \"message\": \"订单创建成功，请进入支付页面\", \"orderId\": \"" + orderId + "\"}");
+        } else if("BLOCK".equals(status)) {
+            return ResponseEntity.ok("{\"status\": \"BLOCK\", \"message\": \"服务火爆，稍后再试...\"}");
         } else if ("FAILED".equals(status)) {
             return ResponseEntity.status(500).body("{\"status\": \"FAILED\", \"message\": \"订单创建失败，库存不足或系统异常\"}");
         }

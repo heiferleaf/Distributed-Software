@@ -1,5 +1,7 @@
 package com.whu.spikeorderservice.consumer;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.whu.spikeorderservice.controller.OrderController.OrderCreateMessage;
 import com.whu.spikeorderservice.service.InventoryFeignService;
 import com.whu.spikeorderservice.service.OrderTccService;
@@ -30,6 +32,7 @@ public class OrderMessageConsumer {
             key = "order.create"
     ))
     @GlobalTransactional(name = "create-order-tx", timeoutMills = 5000, rollbackFor = Exception.class)
+    @SentinelResource(value = "create-order", blockHandler = "handleOrderCreateBlock")
     public void handleOrderCreate(OrderCreateMessage message) {
         log.info("接收到订单创建 MQ 消息，启动全局事务: {}", message);
         Long orderId = message.getOrderId();
@@ -65,5 +68,12 @@ public class OrderMessageConsumer {
             // 必须往外抛出异常，触发 Seata TM 发起 Cancel！！！
             throw e;
         }
+    }
+
+    public void handleOrderCreateBlock(OrderCreateMessage message, BlockException be) {
+        Long orderId = message.getOrderId();
+        Long userId = message.getUserId();
+        log.info("[INFO]: 用户{}尝试创建订单{}限流", userId, orderId);
+        redisTemplate.opsForValue().set("order:state:" + orderId, "FAILED");
     }
 }

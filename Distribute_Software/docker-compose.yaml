@@ -20,6 +20,16 @@ services:
       retries: 3
     restart: unless-stopped
 
+  sentinel:
+    image: bladex/sentinel-dashboard:latest
+    container_name: spike-sentinel
+    environment:
+      - JAVA_OPTS=-Dserver.port=8080 -Dcsp.sentinel.dashboard.server=localhost:8080 -Dproject.name=sentinel-dashboard
+    ports:
+      - "8085:8080"
+    networks:
+      - spike-network
+
   mysql:
     image: mysql:8.0
     container_name: spike-mysql

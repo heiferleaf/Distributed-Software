@@ -22,7 +22,7 @@ spring:
     import: "optional:nacos:${spring.application.name}.yaml"
 
   datasource:
-    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3307}/spike_db?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3307}/spike_db?useUnicode=true&characterEncoding=utf-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=Asia/Shanghai
     username: ${MYSQL_USER:spike_user}
     password: ${MYSQL_PASSWORD:spike_password}
     driver-class-name: com.mysql.cj.jdbc.Driver
